@@ -1,0 +1,5 @@
+flask
+gunicorn
+numpy
+Pillow
+pdf2image

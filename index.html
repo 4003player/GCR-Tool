@@ -62,29 +62,6 @@
     font-size: .9rem; word-break: break-all;
   }
 
-  /* Preview */
-  .preview-area {
-    display: none;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 16px;
-  }
-  .preview-area.visible { display: block; }
-  .preview-row {
-    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
-  }
-  .preview-col { text-align: center; }
-  .preview-col canvas {
-    max-width: 280px; max-height: 280px; width: 100%; height: auto;
-    border: 1px solid var(--border); border-radius: 6px;
-    background: #111;
-  }
-  .preview-col .lbl {
-    display: block; margin-top: 6px;
-    font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
-  }
-
   /* Controls */
   .controls {
     background: var(--surface);
@@ -104,24 +81,22 @@
     width: 48px; text-align: right;
     font-family: 'SF Mono', Consolas, monospace; font-size: .85rem; color: var(--text);
   }
+  .control-row select {
+    flex: 1; background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: .85rem;
+  }
 
-  /* Buttons */
-  .btn-row { display: flex; gap: 12px; }
-  .process-btn, .download-btn {
-    flex: 1;
+  /* Button */
+  .process-btn {
+    background: var(--accent); color: #fff;
     font-size: 1rem; font-weight: 700; border: none;
     border-radius: var(--radius); padding: 14px; cursor: pointer;
-    text-transform: uppercase; letter-spacing: 1px;
     transition: opacity .2s, box-shadow .2s;
+    text-transform: uppercase; letter-spacing: 1px;
   }
-  .process-btn { background: var(--accent); color: #fff; }
   .process-btn:hover:not(:disabled) { opacity: .9; box-shadow: 0 0 18px var(--accent-glow); }
   .process-btn:disabled { opacity: .4; cursor: not-allowed; }
-  .download-btn {
-    background: #3a9d5e; color: #fff; display: none;
-  }
-  .download-btn.visible { display: block; }
-  .download-btn:hover { opacity: .9; }
 
   /* Progress */
   .progress-wrap {
@@ -150,31 +125,18 @@
 <body>
 
 <h1>GCR Tool</h1>
-<p class="subtitle">Gray Component Replacement — drag &amp; drop images</p>
+<p class="subtitle">Gray Component Replacement — drag &amp; drop rasters or PDFs</p>
 
 <div class="container">
 
   <div class="drop-zone" id="dropZone">
-    <input type="file" id="fileInput" accept=".tif,.tiff,.jpg,.jpeg,.png,.bmp,.webp">
+    <input type="file" id="fileInput" accept=".tif,.tiff,.jpg,.jpeg,.png,.bmp,.pdf">
     <div class="drop-icon">📁</div>
-    <div class="drop-label">Drop an image here or click to browse</div>
+    <div class="drop-label">Drop a file here or click to browse</div>
     <div class="drop-label" style="font-size:.78rem; color:var(--muted); margin-top:4px;">
-      JPEG · PNG · TIFF · WebP · BMP
+      TIFF · JPEG · PNG · PDF
     </div>
     <div class="drop-file-name" id="fileName"></div>
-  </div>
-
-  <div class="preview-area" id="previewArea">
-    <div class="preview-row">
-      <div class="preview-col">
-        <canvas id="canvasOriginal"></canvas>
-        <span class="lbl">Original</span>
-      </div>
-      <div class="preview-col">
-        <canvas id="canvasProcessed"></canvas>
-        <span class="lbl">GCR Applied</span>
-      </div>
-    </div>
   </div>
 
   <div class="controls">
@@ -198,12 +160,17 @@
       <input type="range" id="maxBlack" min="0" max="100" value="100">
       <span class="val" id="maxBlackVal">1.00</span>
     </div>
+    <div class="control-row" id="dpiRow" style="display:none;">
+      <label>PDF DPI</label>
+      <select id="dpi">
+        <option value="72">72</option>
+        <option value="150" selected>150</option>
+        <option value="300">300</option>
+      </select>
+    </div>
   </div>
 
-  <div class="btn-row">
-    <button class="process-btn" id="processBtn" disabled>Process</button>
-    <button class="download-btn" id="downloadBtn">Download PNG</button>
-  </div>
+  <button class="process-btn" id="processBtn" disabled>Process &amp; Download CMYK TIFF</button>
 
   <div class="progress-wrap" id="progressWrap">
     <div class="progress-text" id="progressText">Processing…</div>
@@ -211,198 +178,103 @@
   </div>
 
   <div class="info">
-    Runs entirely in your browser — no upload, no server<br>
-    RGB→CMYK→GCR→RGB pipeline &nbsp;·&nbsp; Use the Python version for native CMYK TIFF output
+    Server-side CMYK processing — your file stays CMYK throughout<br>
+    Output: LZW-compressed CMYK TIFF · Neutrals → black · Chromatic → tertiary reduction
   </div>
 </div>
 
 <script>
-const dropZone   = document.getElementById('dropZone');
-const fileInput  = document.getElementById('fileInput');
-const fileNameEl = document.getElementById('fileName');
-const processBtn = document.getElementById('processBtn');
-const downloadBtn= document.getElementById('downloadBtn');
-const previewArea= document.getElementById('previewArea');
-const canvasOrig = document.getElementById('canvasOriginal');
-const canvasProc = document.getElementById('canvasProcessed');
-const progressWrap = document.getElementById('progressWrap');
-const progressBar  = document.getElementById('progressBar');
-const progressText = document.getElementById('progressText');
+var API = 'https://gcr-tool-server.fly.dev';
 
-let sourceImage = null;  // HTMLImageElement
+var dropZone   = document.getElementById('dropZone');
+var fileInput  = document.getElementById('fileInput');
+var fileNameEl = document.getElementById('fileName');
+var processBtn = document.getElementById('processBtn');
+var dpiRow     = document.getElementById('dpiRow');
+var progressWrap = document.getElementById('progressWrap');
+var progressBar  = document.getElementById('progressBar');
+var progressText = document.getElementById('progressText');
 
-// --- Slider wiring ---
-['strength','blackStart','residual','maxBlack'].forEach(id => {
-  const sl = document.getElementById(id);
-  const vl = document.getElementById(id + 'Val');
-  const up = () => { vl.textContent = (sl.value / 100).toFixed(2); };
+var currentFile = null;
+
+// Slider wiring
+['strength','blackStart','residual','maxBlack'].forEach(function(id) {
+  var sl = document.getElementById(id);
+  var vl = document.getElementById(id + 'Val');
+  var up = function() { vl.textContent = (sl.value / 100).toFixed(2); };
   sl.addEventListener('input', up);
   up();
 });
 
-// --- Drop zone ---
-dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('hover'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('hover'));
-dropZone.addEventListener('drop', e => {
+// Drop zone
+dropZone.addEventListener('click', function() { fileInput.click(); });
+dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('hover'); });
+dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('hover'); });
+dropZone.addEventListener('drop', function(e) {
   e.preventDefault(); dropZone.classList.remove('hover');
-  if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+  if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
 });
-fileInput.addEventListener('change', () => { if (fileInput.files.length) loadFile(fileInput.files[0]); });
+fileInput.addEventListener('change', function() { if (fileInput.files.length) setFile(fileInput.files[0]); });
 
-function loadFile(file) {
+function setFile(file) {
+  currentFile = file;
   fileNameEl.textContent = file.name;
   dropZone.classList.add('has-file');
-  downloadBtn.classList.remove('visible');
-
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      sourceImage = img;
-      drawOriginal(img);
-      processBtn.disabled = false;
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
+  processBtn.disabled = false;
+  var isPdf = file.name.toLowerCase().endsWith('.pdf');
+  dpiRow.style.display = isPdf ? 'flex' : 'none';
 }
 
-function drawOriginal(img) {
-  canvasOrig.width  = img.width;
-  canvasOrig.height = img.height;
-  const ctx = canvasOrig.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  previewArea.classList.add('visible');
-
-  // Clear processed canvas
-  canvasProc.width  = img.width;
-  canvasProc.height = img.height;
-  const ctx2 = canvasProc.getContext('2d');
-  ctx2.fillStyle = '#111';
-  ctx2.fillRect(0, 0, img.width, img.height);
-}
-
-// --- GCR Processing (client-side, RGB→CMYK→GCR→RGB) ---
-
-function rgbToCmyk(r, g, b) {
-  // r, g, b in 0-1
-  const k = 1 - Math.max(r, g, b);
-  if (k >= 1) return [0, 0, 0, 1];
-  const inv = 1 / (1 - k);
-  return [
-    (1 - r - k) * inv,
-    (1 - g - k) * inv,
-    (1 - b - k) * inv,
-    k
-  ];
-}
-
-function cmykToRgb(c, m, y, k) {
-  const inv = 1 - k;
-  return [
-    (1 - c) * inv,
-    (1 - m) * inv,
-    (1 - y) * inv
-  ];
-}
-
-function applyGcr(c, m, y, k, strength, blackStart, residual, maxBlack) {
-  const gray = Math.min(c, m, y);
-  const eligible = Math.max(gray - blackStart, 0);
-  const replaceable = eligible * strength * (1 - residual);
-
-  const cNew = Math.max(c - replaceable, 0);
-  const mNew = Math.max(m - replaceable, 0);
-  const yNew = Math.max(y - replaceable, 0);
-  const kNew = Math.min(k + replaceable, maxBlack);
-
-  return [cNew, mNew, yNew, kNew];
-}
-
-processBtn.addEventListener('click', () => {
-  if (!sourceImage) return;
+// Process via Fly backend
+processBtn.addEventListener('click', function() {
+  if (!currentFile) return;
   processBtn.disabled = true;
   progressWrap.classList.add('visible');
-  progressBar.style.width = '10%';
-  progressText.textContent = 'Processing…';
+  progressBar.style.width = '20%';
+  progressText.textContent = 'Uploading…';
 
-  const strength   = document.getElementById('strength').value / 100;
-  const blackStart = document.getElementById('blackStart').value / 100;
-  const residualV  = document.getElementById('residual').value / 100;
-  const maxBlack   = document.getElementById('maxBlack').value / 100;
+  var fd = new FormData();
+  fd.append('file', currentFile);
+  fd.append('strength',    document.getElementById('strength').value / 100);
+  fd.append('black_start', document.getElementById('blackStart').value / 100);
+  fd.append('residual',    document.getElementById('residual').value / 100);
+  fd.append('max_black',   document.getElementById('maxBlack').value / 100);
+  fd.append('dpi',         document.getElementById('dpi').value);
 
-  // Read source pixels
-  const w = sourceImage.width, h = sourceImage.height;
-  const ctxSrc = canvasOrig.getContext('2d');
-  const srcData = ctxSrc.getImageData(0, 0, w, h);
-  const src = srcData.data;
+  progressBar.style.width = '50%';
+  progressText.textContent = 'Processing on server (CMYK preserved)…';
 
-  canvasProc.width  = w;
-  canvasProc.height = h;
-  const ctxDst = canvasProc.getContext('2d');
-  const dstData = ctxDst.createImageData(w, h);
-  const dst = dstData.data;
+  fetch(API + '/process', { method: 'POST', body: fd })
+    .then(function(resp) {
+      if (!resp.ok) return resp.json().then(function(e) { throw new Error(e.error || 'Processing failed'); });
+      progressBar.style.width = '90%';
+      progressText.textContent = 'Downloading CMYK TIFF…';
+      return resp.blob();
+    })
+    .then(function(blob) {
+      var cd = '';
+      var baseName = (currentFile.name || 'image').replace(/\.[^.]+$/, '');
+      var outName = baseName + '_gcr.tif';
 
-  // Process in chunks to keep UI responsive
-  const totalPixels = w * h;
-  const chunkSize = 200000;
-  let offset = 0;
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = outName;
+      a.click();
+      URL.revokeObjectURL(a.href);
 
-  function processChunk() {
-    const end = Math.min(offset + chunkSize, totalPixels);
-
-    for (let i = offset; i < end; i++) {
-      const idx = i * 4;
-      const r = src[idx]     / 255;
-      const g = src[idx + 1] / 255;
-      const b = src[idx + 2] / 255;
-
-      // RGB → CMYK
-      let [c, m, y, k] = rgbToCmyk(r, g, b);
-
-      // Apply GCR
-      [c, m, y, k] = applyGcr(c, m, y, k, strength, blackStart, residualV, maxBlack);
-
-      // CMYK → RGB
-      const [rOut, gOut, bOut] = cmykToRgb(c, m, y, k);
-
-      dst[idx]     = Math.round(rOut * 255);
-      dst[idx + 1] = Math.round(gOut * 255);
-      dst[idx + 2] = Math.round(bOut * 255);
-      dst[idx + 3] = src[idx + 3]; // preserve alpha
-    }
-
-    offset = end;
-    const pct = Math.round((offset / totalPixels) * 100);
-    progressBar.style.width = pct + '%';
-    progressText.textContent = 'Processing… ' + pct + '%';
-
-    if (offset < totalPixels) {
-      requestAnimationFrame(processChunk);
-    } else {
-      ctxDst.putImageData(dstData, 0, 0);
-      progressText.textContent = 'Done ✓';
-      downloadBtn.classList.add('visible');
-      processBtn.disabled = false;
-
-      setTimeout(() => {
+      progressBar.style.width = '100%';
+      progressText.textContent = 'Done ✓ — CMYK TIFF downloaded';
+    })
+    .catch(function(err) {
+      progressText.textContent = '❌ ' + err.message;
+    })
+    .finally(function() {
+      setTimeout(function() {
         progressWrap.classList.remove('visible');
         progressBar.style.width = '0%';
-      }, 1500);
-    }
-  }
-
-  requestAnimationFrame(processChunk);
-});
-
-// --- Download ---
-downloadBtn.addEventListener('click', () => {
-  const link = document.createElement('a');
-  const name = (fileNameEl.textContent || 'image').replace(/\.[^.]+$/, '') + '_gcr.png';
-  link.download = name;
-  link.href = canvasProc.toDataURL('image/png');
-  link.click();
+        processBtn.disabled = false;
+      }, 2500);
+    });
 });
 </script>
 </body>
