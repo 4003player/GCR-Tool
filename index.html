@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GCR Tool</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --card: #0f3460;
+    --accent: #e94560;
+    --accent-glow: rgba(233, 69, 96, .35);
+    --text: #eee;
+    --muted: #8899aa;
+    --border: #2a3a5e;
+    --radius: 10px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px 20px;
+  }
+
+  h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.5px; }
+  .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 28px; }
+
+  .container {
+    width: 100%; max-width: 640px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+
+  /* Drop Zone */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 44px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s, box-shadow .2s;
+  }
+  .drop-zone.hover {
+    border-color: var(--accent);
+    background: rgba(233, 69, 96, .07);
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+  .drop-zone.has-file { border-color: #3a9d5e; background: rgba(58, 157, 94, .08); }
+  .drop-zone input { display: none; }
+  .drop-icon { font-size: 2.4rem; margin-bottom: 8px; }
+  .drop-label { font-size: .95rem; }
+  .drop-file-name {
+    margin-top: 8px; font-weight: 600; color: #5ec87a;
+    font-size: .9rem; word-break: break-all;
+  }
+
+  /* Preview */
+  .preview-area {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .preview-area.visible { display: block; }
+  .preview-row {
+    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+  }
+  .preview-col { text-align: center; }
+  .preview-col canvas {
+    max-width: 280px; max-height: 280px; width: 100%; height: auto;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: #111;
+  }
+  .preview-col .lbl {
+    display: block; margin-top: 6px;
+    font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+  }
+
+  /* Controls */
+  .controls {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .control-row { display: flex; align-items: center; gap: 12px; }
+  .control-row label {
+    width: 110px; flex-shrink: 0;
+    font-size: .82rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
+  }
+  .control-row input[type=range] { flex: 1; accent-color: var(--accent); height: 6px; }
+  .control-row .val {
+    width: 48px; text-align: right;
+    font-family: 'SF Mono', Consolas, monospace; font-size: .85rem; color: var(--text);
+  }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 12px; }
+  .process-btn, .download-btn {
+    flex: 1;
+    font-size: 1rem; font-weight: 700; border: none;
+    border-radius: var(--radius); padding: 14px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 1px;
+    transition: opacity .2s, box-shadow .2s;
+  }
+  .process-btn { background: var(--accent); color: #fff; }
+  .process-btn:hover:not(:disabled) { opacity: .9; box-shadow: 0 0 18px var(--accent-glow); }
+  .process-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .download-btn {
+    background: #3a9d5e; color: #fff; display: none;
+  }
+  .download-btn.visible { display: block; }
+  .download-btn:hover { opacity: .9; }
+
+  /* Progress */
+  .progress-wrap {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 22px; text-align: center;
+  }
+  .progress-wrap.visible { display: block; }
+  .progress-bar-track {
+    width: 100%; height: 6px;
+    background: var(--card); border-radius: 3px; overflow: hidden; margin-top: 10px;
+  }
+  .progress-bar {
+    height: 100%; background: var(--accent); width: 0%;
+    border-radius: 3px; transition: width .3s;
+  }
+  .progress-text { font-size: .82rem; color: var(--muted); }
+
+  .info {
+    font-size: .75rem; color: var(--muted); text-align: center; line-height: 1.5; margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<h1>GCR Tool</h1>
+<p class="subtitle">Gray Component Replacement — drag &amp; drop images</p>
+
+<div class="container">
+
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".tif,.tiff,.jpg,.jpeg,.png,.bmp,.webp">
+    <div class="drop-icon">📁</div>
+    <div class="drop-label">Drop an image here or click to browse</div>
+    <div class="drop-label" style="font-size:.78rem; color:var(--muted); margin-top:4px;">
+      JPEG · PNG · TIFF · WebP · BMP
+    </div>
+    <div class="drop-file-name" id="fileName"></div>
+  </div>
+
+  <div class="preview-area" id="previewArea">
+    <div class="preview-row">
+      <div class="preview-col">
+        <canvas id="canvasOriginal"></canvas>
+        <span class="lbl">Original</span>
+      </div>
+      <div class="preview-col">
+        <canvas id="canvasProcessed"></canvas>
+        <span class="lbl">GCR Applied</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="control-row">
+      <label>Strength</label>
+      <input type="range" id="strength" min="0" max="100" value="70">
+      <span class="val" id="strengthVal">0.70</span>
+    </div>
+    <div class="control-row">
+      <label>Black Start</label>
+      <input type="range" id="blackStart" min="0" max="100" value="2">
+      <span class="val" id="blackStartVal">0.02</span>
+    </div>
+    <div class="control-row">
+      <label>Residual</label>
+      <input type="range" id="residual" min="0" max="100" value="15">
+      <span class="val" id="residualVal">0.15</span>
+    </div>
+    <div class="control-row">
+      <label>Max Black</label>
+      <input type="range" id="maxBlack" min="0" max="100" value="100">
+      <span class="val" id="maxBlackVal">1.00</span>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="process-btn" id="processBtn" disabled>Process</button>
+    <button class="download-btn" id="downloadBtn">Download PNG</button>
+  </div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-text" id="progressText">Processing…</div>
+    <div class="progress-bar-track"><div class="progress-bar" id="progressBar"></div></div>
+  </div>
+
+  <div class="info">
+    Runs entirely in your browser — no upload, no server<br>
+    RGB→CMYK→GCR→RGB pipeline &nbsp;·&nbsp; Use the Python version for native CMYK TIFF output
+  </div>
+</div>
+
+<script>
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const fileNameEl = document.getElementById('fileName');
+const processBtn = document.getElementById('processBtn');
+const downloadBtn= document.getElementById('downloadBtn');
+const previewArea= document.getElementById('previewArea');
+const canvasOrig = document.getElementById('canvasOriginal');
+const canvasProc = document.getElementById('canvasProcessed');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar  = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+
+let sourceImage = null;  // HTMLImageElement
+
+// --- Slider wiring ---
+['strength','blackStart','residual','maxBlack'].forEach(id => {
+  const sl = document.getElementById(id);
+  const vl = document.getElementById(id + 'Val');
+  const up = () => { vl.textContent = (sl.value / 100).toFixed(2); };
+  sl.addEventListener('input', up);
+  up();
+});
+
+// --- Drop zone ---
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('hover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('hover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('hover');
+  if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) loadFile(fileInput.files[0]); });
+
+function loadFile(file) {
+  fileNameEl.textContent = file.name;
+  dropZone.classList.add('has-file');
+  downloadBtn.classList.remove('visible');
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      sourceImage = img;
+      drawOriginal(img);
+      processBtn.disabled = false;
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function drawOriginal(img) {
+  canvasOrig.width  = img.width;
+  canvasOrig.height = img.height;
+  const ctx = canvasOrig.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  previewArea.classList.add('visible');
+
+  // Clear processed canvas
+  canvasProc.width  = img.width;
+  canvasProc.height = img.height;
+  const ctx2 = canvasProc.getContext('2d');
+  ctx2.fillStyle = '#111';
+  ctx2.fillRect(0, 0, img.width, img.height);
+}
+
+// --- GCR Processing (client-side, RGB→CMYK→GCR→RGB) ---
+
+function rgbToCmyk(r, g, b) {
+  // r, g, b in 0-1
+  const k = 1 - Math.max(r, g, b);
+  if (k >= 1) return [0, 0, 0, 1];
+  const inv = 1 / (1 - k);
+  return [
+    (1 - r - k) * inv,
+    (1 - g - k) * inv,
+    (1 - b - k) * inv,
+    k
+  ];
+}
+
+function cmykToRgb(c, m, y, k) {
+  const inv = 1 - k;
+  return [
+    (1 - c) * inv,
+    (1 - m) * inv,
+    (1 - y) * inv
+  ];
+}
+
+function applyGcr(c, m, y, k, strength, blackStart, residual, maxBlack) {
+  const gray = Math.min(c, m, y);
+  const eligible = Math.max(gray - blackStart, 0);
+  const replaceable = eligible * strength * (1 - residual);
+
+  const cNew = Math.max(c - replaceable, 0);
+  const mNew = Math.max(m - replaceable, 0);
+  const yNew = Math.max(y - replaceable, 0);
+  const kNew = Math.min(k + replaceable, maxBlack);
+
+  return [cNew, mNew, yNew, kNew];
+}
+
+processBtn.addEventListener('click', () => {
+  if (!sourceImage) return;
+  processBtn.disabled = true;
+  progressWrap.classList.add('visible');
+  progressBar.style.width = '10%';
+  progressText.textContent = 'Processing…';
+
+  const strength   = document.getElementById('strength').value / 100;
+  const blackStart = document.getElementById('blackStart').value / 100;
+  const residualV  = document.getElementById('residual').value / 100;
+  const maxBlack   = document.getElementById('maxBlack').value / 100;
+
+  // Read source pixels
+  const w = sourceImage.width, h = sourceImage.height;
+  const ctxSrc = canvasOrig.getContext('2d');
+  const srcData = ctxSrc.getImageData(0, 0, w, h);
+  const src = srcData.data;
+
+  canvasProc.width  = w;
+  canvasProc.height = h;
+  const ctxDst = canvasProc.getContext('2d');
+  const dstData = ctxDst.createImageData(w, h);
+  const dst = dstData.data;
+
+  // Process in chunks to keep UI responsive
+  const totalPixels = w * h;
+  const chunkSize = 200000;
+  let offset = 0;
+
+  function processChunk() {
+    const end = Math.min(offset + chunkSize, totalPixels);
+
+    for (let i = offset; i < end; i++) {
+      const idx = i * 4;
+      const r = src[idx]     / 255;
+      const g = src[idx + 1] / 255;
+      const b = src[idx + 2] / 255;
+
+      // RGB → CMYK
+      let [c, m, y, k] = rgbToCmyk(r, g, b);
+
+      // Apply GCR
+      [c, m, y, k] = applyGcr(c, m, y, k, strength, blackStart, residualV, maxBlack);
+
+      // CMYK → RGB
+      const [rOut, gOut, bOut] = cmykToRgb(c, m, y, k);
+
+      dst[idx]     = Math.round(rOut * 255);
+      dst[idx + 1] = Math.round(gOut * 255);
+      dst[idx + 2] = Math.round(bOut * 255);
+      dst[idx + 3] = src[idx + 3]; // preserve alpha
+    }
+
+    offset = end;
+    const pct = Math.round((offset / totalPixels) * 100);
+    progressBar.style.width = pct + '%';
+    progressText.textContent = 'Processing… ' + pct + '%';
+
+    if (offset < totalPixels) {
+      requestAnimationFrame(processChunk);
+    } else {
+      ctxDst.putImageData(dstData, 0, 0);
+      progressText.textContent = 'Done ✓';
+      downloadBtn.classList.add('visible');
+      processBtn.disabled = false;
+
+      setTimeout(() => {
+        progressWrap.classList.remove('visible');
+        progressBar.style.width = '0%';
+      }, 1500);
+    }
+  }
+
+  requestAnimationFrame(processChunk);
+});
+
+// --- Download ---
+downloadBtn.addEventListener('click', () => {
+  const link = document.createElement('a');
+  const name = (fileNameEl.textContent || 'image').replace(/\.[^.]+$/, '') + '_gcr.png';
+  link.download = name;
+  link.href = canvasProc.toDataURL('image/png');
+  link.click();
+});
+</script>
+</body>
+</html>
