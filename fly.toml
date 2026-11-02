@@ -1,8 +1,12 @@
+# fly.toml app configuration file generated for gcr-tool-server on 2026-11-01T20:11:19-08:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
 app = 'gcr-tool-server'
 primary_region = 'sjc'
 
 [build]
-
 [http_service]
   internal_port = 8080
   force_https = true
@@ -12,16 +16,16 @@ primary_region = 'sjc'
   processes = ['app']
 
   [http_service.concurrency]
-    type = "requests"
+    type = 'requests'
     hard_limit = 10
     soft_limit = 5
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "10s"
-    method = "GET"
-    path = "/health"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
 
 [[vm]]
   memory = '2gb'
